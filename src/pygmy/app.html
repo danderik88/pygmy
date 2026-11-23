@@ -584,6 +584,8 @@ async function rpc(name, args, translate = true) { return rpcReal(name, args, tr
 // Pygmy speaks Italian to agents; the app shows English. Known refusals get a short English line, the rest a generic one.
 const SPOOL_MSG = /(AMS slot [A-D][1-4] (?:is empty now|now holds).*|This file does not match the spools.*)$/;
 const EN = [
+  // Klipper runs one G-code at a time: Stop, Pause and the like wait until the start routine (heating) is over
+  [/esito non osservato/, "Sent. The printer has not confirmed yet: it is busy heating and acts as soon as that step ends"],
   [/3MF affettato/, "Could not prepare this file for printing"],
   [SPOOL_MSG, m => m.match(SPOOL_MSG)[1]],
   [/Nessuno slot AMS per il filamento (\d+)/, m => `No AMS slot holds colour ${m.match(/filamento (\d+)/)[1]}: pick the spools in Print now`],
@@ -1751,7 +1753,10 @@ function paintPlates() {
 $("pnplates").onclick = e => {
   const b = e.target.closest("button"); if (!b) return;
   const printer = PN.printer || PRINTER;
-  if (b.dataset.pp) return pnStartPrint(Number(b.dataset.pp), null, printer);
+  if (b.dataset.pp) {  // the plates left over go to the queue behind it, in order
+    const id = Number(b.dataset.pp);
+    return pnStartPrint(id, null, printer, PN.plateIds.filter(x => x !== id));
+  }
   const ids = b.dataset.pall ? PN.plateIds.slice() : [Number(b.dataset.pq)];
   act(async () => {
     for (const id of ids) await rpc("queue_add", { file_id: id, own: true, printer });
@@ -1833,7 +1838,8 @@ $("pnslice").onclick = async () => {
     pnPoll();
   } catch (e) { toast(e.message); }
 };
-async function pnStartPrint(fileId, reqId, printer) {
+// `rest`: the other plates of the same model, queued behind this one once the print has started.
+async function pnStartPrint(fileId, reqId, printer, rest = []) {
   const alias = printer || PN.printer || PRINTER;
   try {
     const prep = await rpc("prepare_print_start", { file_id: fileId, printer: alias });
@@ -1846,6 +1852,9 @@ async function pnStartPrint(fileId, reqId, printer) {
         $("pnsliceprog").hidden = true; $("pnprint").disabled = $("pnqueue").disabled = false;
       }
       if (reqId) rpc("print_requests", { id: reqId, status: "started" }).catch(() => {});
+      for (const id of rest) await rpc("queue_add", { file_id: id, own: true, printer: alias });
+      if (rest.length)  // every plate is placed: close the request (each "started" moves a multi-plate request on by one)
+        for (const _ of PN.allPlates) await rpc("print_requests", { id: PN.id, status: "started" }).catch(() => {});
       pnReset();
       if (alias !== PRINTER) selectPrinter(alias);
       document.querySelector('.tabs [data-t="main"]').click();

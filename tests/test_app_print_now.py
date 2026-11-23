@@ -124,3 +124,4 @@ class SeveralPlates(unittest.TestCase):
         for needle in ("pnReadyMany", "paintPlates", 'data-pp="', 'data-pq="', 'data-pall="1"', 'id="pnplates"'):
             self.assertIn(needle, html)
         self.assertIn("(r.plates || []).length > 1", html)
+        self.assertIn("pnStartPrint(id, null, printer, PN.plateIds.filter", html)  # printing one queues the rest

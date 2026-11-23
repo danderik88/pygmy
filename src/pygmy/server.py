@@ -726,8 +726,31 @@ def assert_unlocked(alias, action=None):
     """Pause and stop are safety commands: an unknown last outcome must never refuse them."""
     if action in ("pause", "stop"):
         return
-    if DB.execute("SELECT 1 FROM locks WHERE printer=?", (alias,)).fetchone():
+    row = DB.execute("SELECT c.action FROM locks l JOIN commands c ON c.key=l.key WHERE l.printer=?", (alias,)).fetchone()
+    if row and row[0] in ("stop", "pause", "resume") and isinstance(link_of(alias), MoonrakerLink):
+        # Klipper acts on these only once its start routine is over, so the answer came late: read the state now.
+        # A Bambu printer keeps its lock: there an unknown outcome really is unknown, and recheck is the way out.
+        try:
+            settle_lock(alias)
+            return
+        except ToolError:
+            pass
+    if row or DB.execute("SELECT 1 FROM locks WHERE printer=?", (alias,)).fetchone():
         raise ToolError(f"Esito dell'ultimo comando su {alias} sconosciuto: usa recheck prima di altri comandi")
+
+
+def settle_lock(alias):
+    """Read the printer again for the command left with an unknown outcome and release the lock. Nothing is resent."""
+    lock = DB.execute("SELECT key FROM locks WHERE printer=?", (alias,)).fetchone()
+    if lock is None:
+        return None
+    raw = read_status(alias)
+    if raw.get("connected") is not True:
+        raise ToolError(f"{alias} ancora disconnessa: blocco mantenuto")
+    action, params = DB.execute("SELECT action, params FROM commands WHERE key=?", lock).fetchone()
+    params = json.loads(params) if params else {}
+    outcome = "confirmed" if observed(action, params, raw) else "not_applied"
+    return finish(lock[0], alias, action, params, outcome, f"stato riletto: {raw.get('state')}")
 
 
 def blocked_reason(action, raw):
@@ -3274,16 +3297,9 @@ def tool_recheck(args):
     printer_id(args)
     alias = args["printer"]
     with COMMAND_LOCK:
-        lock = DB.execute("SELECT key FROM locks WHERE printer=?", (alias,)).fetchone()
-        if lock is None:
+        result = settle_lock(alias)
+        if result is None:
             return as_text({"printer": alias, "locked": False})
-        raw = read_status(alias)
-        if raw.get("connected") is not True:
-            raise ToolError(f"{alias} ancora disconnessa: blocco mantenuto")
-        action, params = DB.execute("SELECT action, params FROM commands WHERE key=?", lock).fetchone()
-        params = json.loads(params) if params else {}
-        outcome = "confirmed" if observed(action, params, raw) else "not_applied"
-        result = finish(lock[0], alias, action, params, outcome, f"stato riletto: {raw.get('state')}")
         return as_text({**result, "locked": False})
 
 
