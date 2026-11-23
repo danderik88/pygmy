@@ -45,6 +45,7 @@ import go2rtc  # noqa: E402
 import ha_mqtt  # noqa: E402
 import notify  # noqa: E402
 import onboard  # noqa: E402
+import preview  # noqa: E402
 import slicer  # noqa: E402
 import fetch  # noqa: E402
 try:
@@ -817,8 +818,9 @@ def start_klipper(link, name, data):
     if data[:2] == b"PK":
         plate = sliced_plate(data)
         try:
+            images = preview.plate_images(data, plate)  # Fluidd and KlipperScreen read the thumbnail from the G-code header
             with zipfile.ZipFile(io.BytesIO(data)) as z:
-                data = z.read(f"Metadata/plate_{plate}.gcode")
+                data = preview.klipper_gcode(z.read(f"Metadata/plate_{plate}.gcode"), images)
         except KeyError:
             raise ftps.UploadError("il 3MF non contiene G-code: affettalo per questa stampante") from None
         name = name.removesuffix(".3mf").removesuffix(".gcode") + ".gcode"
@@ -1054,6 +1056,10 @@ def plate_png(data, path, any_plate=False):
             names = archive.namelist()
             name = path if path in names or not any_plate else next((n for n in names if re.fullmatch(r"Metadata/plate_\d+\.png", n)), None)
             png = archive.read(name) if name in names else None
+            if png is None and any_plate:  # sliced here, so no image from Orca: draw it
+                num = next((m.group(1) for n in names if (m := re.fullmatch(r"Metadata/plate_(\d+)\.gcode", n))), None)
+                images = preview.plate_images(data, num) if num else {}
+                png = images[max(images)] if images else None
     except (KeyError, zipfile.BadZipFile, zlib.error, OSError, NotImplementedError, RuntimeError):
         return None
     return base64.b64encode(png).decode() if png is not None and len(png) < 2_000_000 else None
@@ -3113,9 +3119,10 @@ def _slice_request(rid, printer, source, file_name, choices_json, slots, copies,
         raise
     file_ids = []
     stem = _plate_stem(name)
+    colors = [] if klipper else [s.get("color") for s in spools]  # headless Orca draws no plate image: Pygmy does, in the spools' colours
     for i, plate in enumerate(plates):
         plate_name = f"{stem}_{i + 1}.gcode.3mf" if len(plates) > 1 else f"{stem}.gcode.3mf"
-        file_ids.append(upload_file(plate_name, plate["gcode_3mf"])["file_id"])
+        file_ids.append(upload_file(plate_name, preview.with_previews(plate["gcode_3mf"], colors))["file_id"])
         # The spools picked in step 2, one per model colour: the start sends exactly these.
         DB.execute("UPDATE uploads SET feed=? WHERE file_id=?", (json.dumps(feed), file_ids[-1]))
     note = ("Also on this page: " + ", ".join(others))[:300] if others else None

@@ -1841,10 +1841,13 @@ async function loadQueue() {
   $("queuename").textContent = nameOf(p);
   try {
     const jobs = (await rpc("queue_list", { printer: p })).jobs;
-    $("queuelist").innerHTML = jobs.length ? jobs.map(j => `<div class="file"><span><b>${esc(j.name.replace(/\.gcode\.3mf$/, ""))}</b>
-      <span class="note">${Math.round((j.time_s || 0) / 60)} min${j.weight_g != null ? ` · ${Math.round(j.weight_g)} g` : ""}</span></span>
+    $("queuelist").innerHTML = jobs.length ? jobs.map((j, i) => `<div class="file"><img data-qt="${j.file_id}" alt="" hidden style="width:48px;height:48px;border-radius:8px;object-fit:contain;background:#000;flex:none;margin-right:10px"><span style="flex:1;min-width:0"><b>${i + 1}. ${esc(j.name.replace(/\.gcode\.3mf$/, ""))}</b>
+      <span class="note">${j.plate ? `${esc(plateLabel(j.plate))} · ` : ""}${Math.round((j.time_s || 0) / 60)} min${j.weight_g != null ? ` · ${Math.round(j.weight_g)} g` : ""}</span></span>
       <span style="display:flex;gap:6px;flex:none"><button class="btn" data-qp="${j.file_id}">Print</button><button class="btn" data-qr="${j.id}">Remove</button></span></div>`).join("")
       : `<p class="note">No jobs queued for this printer.</p>`;
+    for (const img of $("queuelist").querySelectorAll("img[data-qt]"))
+      rpc("file_preview", { file_id: Number(img.dataset.qt) })
+        .then(r => { if (r.png) { img.src = "data:image/png;base64," + r.png; img.hidden = false; } }).catch(() => {});
   } catch (e) { $("queuelist").innerHTML = `<p class="note">${esc(e.message)}</p>`; }
 }
 $("queuelist").onclick = e => {
@@ -1852,7 +1855,7 @@ $("queuelist").onclick = e => {
   const p = PN.printer || PRINTER;
   if (b.dataset.qp) return pnStartPrint(Number(b.dataset.qp), null, p);
   if (!b.dataset.qr) return;
-  const name = b.closest(".file").querySelector("b").textContent;
+  const name = b.closest(".file").querySelector("b").textContent.replace(/^\d+\. /, "");
   if (confirm(`Remove ${name} from the queue?`))
     act(async () => { await rpc("queue_remove", { id: Number(b.dataset.qr) }, false); await loadQueue(); }, "Removed from the queue");
 };
