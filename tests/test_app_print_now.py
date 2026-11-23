@@ -125,3 +125,11 @@ class SeveralPlates(unittest.TestCase):
             self.assertIn(needle, html)
         self.assertIn("(r.plates || []).length > 1", html)
         self.assertIn("pnStartPrint(id, null, printer, PN.plateIds.filter", html)  # printing one queues the rest
+
+
+class CrashBanner(unittest.TestCase):
+    """A script error showed as a black page on an installed app (2026-11-23): it now says what failed."""
+    def test_an_uncaught_error_is_shown_with_a_reload_button(self):
+        html = (Path(__file__).resolve().parents[1] / "src" / "pygmy" / "app.html").read_text()
+        self.assertIn('addEventListener("error"', html)
+        self.assertIn("Pygmy hit an error", html)

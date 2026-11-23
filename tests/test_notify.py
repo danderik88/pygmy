@@ -327,3 +327,12 @@ class FirstRun(unittest.TestCase):
         self.assertIn("if (token) firstLoad();", html)
         self.assertIn("if (token && !PRINTERS.length) showPrinters();", html)
         self.assertNotIn("syncPrinters().finally(() => { if (!PRINTERS.length) showPrinters();", html)
+
+
+class ShellCache(unittest.TestCase):
+    """The installed app opens from a kept copy when the link is slow; the printers' data is never cached."""
+    def test_only_the_page_and_its_icons_are_kept_network_first(self):
+        sw = (APP / "sw.js").read_text()
+        self.assertIn('const SHELL = ["/app", "/manifest.json", "/icon-192.png", "/icon-512.png"]', sw)
+        self.assertIn("SHELL.includes(url.pathname)", sw)  # /mcp, /photo and the camera never pass through the cache
+        self.assertIn("setTimeout(no, 4000)", sw)

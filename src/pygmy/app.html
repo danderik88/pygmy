@@ -549,6 +549,19 @@ select { font: 16px var(--sans); color: var(--fg); background: var(--panel2); bo
 <div class="toast" id="toast" hidden></div>
 
 <script>
+// A script error must never leave a black page: say what it was, with a way out.
+addEventListener("error", e => {
+  if (document.getElementById("crash")) return;
+  const d = document.createElement("div"), b = document.createElement("button");
+  d.id = "crash";
+  d.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:999;background:#2a1d1d;color:#f4dede;border:1px solid #7a3b3b;border-radius:12px;padding:12px;font:13px -apple-system,sans-serif";
+  d.textContent = "Pygmy hit an error: " + (e.message || "unknown") + (e.lineno ? ` (line ${e.lineno})` : "") + " ";
+  b.textContent = "Reload"; b.onclick = () => location.reload();
+  d.appendChild(b); document.body.appendChild(d);
+});
+</script>
+
+<script>
 // Display names come from Pygmy (printer_info.names); this map holds them after the first sync.
 const NAMES = {};
 const nameOf = a => NAMES[a] || a.toUpperCase();
@@ -1999,7 +2012,7 @@ async function showPrinters() {
     ? `<div class="acts">${picked.size === 1 ? '<button class="btn" data-act="rename">Rename</button>' : ""}${picked.size === 1 && KLIPPERS.has([...picked][0]) ? '<button class="btn" data-act="orca">Orca profiles</button>' : ""}${picked.size === 1 && !CUSTOM.has([...picked][0]) ? '<button class="btn" data-act="code">Change access code</button>' : ""}<button class="btn stop" data-act="remove"${picked.size ? "" : " disabled"}>Remove${picked.size ? ` (${picked.size})` : ""}</button><button class="btn" data-act="done">Done</button></div><div class="acts" id="pcode"></div>`
     : `<div id="pfound"></div><div class="acts"><button class="btn primary" id="apopen">+ Add printer</button><button class="btn" id="pscan">Scan</button></div>`;
   $("plist").innerHTML = `<div style="text-align: right">${selecting ? "" : '<button class="btn" data-act="select">Select</button>'}</div>` + rows.join("") + bar;
-  $("printers").hidden = false;
+  $("printers").hidden = !$("login").hidden;  // an unpaired device asks for its code first: the list would cover it
   // Filled after the list: discovery can take a few seconds when nothing was heard yet.
   if (!selecting) rpc("discover_printers", {}).then(r => {
     apKModels = r.klipper_models || apKModels;
