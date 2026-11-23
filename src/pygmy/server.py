@@ -1499,6 +1499,23 @@ def user_presets_for(printer, filaments):
     return out
 
 
+def apply_default_process(printer, user, choices):
+    """No process picked in Print now: the printer's default print profile, if it is still one of the user's."""
+    if choices.get("process") is None and user:
+        name = default_process_of(printer)
+        if name in user["processes"]:
+            choices["process"] = name
+
+
+def default_process_of(alias):
+    """The print profile Standard uses on this printer, or None (also without a database, as in status tests)."""
+    try:
+        row = DB.execute("SELECT value FROM settings WHERE printer=? AND key='bff_default_process'", (alias,)).fetchone()
+    except (AttributeError, sqlite3.Error):
+        return None
+    return row[0] if row else None
+
+
 def tool_orca_profiles(args):
     """Upload (bundle_b64), pick the loaded filament (loaded), or just read the state. Klipper printers only."""
     import base64
@@ -1679,7 +1696,8 @@ def tool_printer_info(args):
         "plate_type": plate_type(alias) if DB is not None else None,
         "choices": {"nozzle_diameters": NOZZLE_DIAMETERS, "nozzle_types": NOZZLE_TYPES, "plate_types": PLATE_TYPES,
                     "spool_profiles": spool_profiles(alias),
-                    "user_processes": sorted(user_preset_pools(alias)[2])},
+                    "user_processes": sorted(user_preset_pools(alias)[2]),
+                    "default_process": default_process_of(alias)},
         **({"options": options} if options else {}),
     })
 
@@ -2226,6 +2244,17 @@ def tool_set_print_option(args):
         with DB:
             DB.execute("INSERT OR REPLACE INTO settings VALUES (?, ?, ?)", (args["printer"], option, mode))
         return as_text({"printer": args["printer"], "option": option, "mode": mode, "outcome": "saved"})
+    if option == "bff_default_process":  # the print profile "Standard" uses on this printer; "" = the built-in one
+        printer_id(args)
+        process = args.get("process") or ""
+        if not isinstance(process, str) or len(process) > 200:
+            raise ToolError("process deve essere il nome di un profilo di stampa")
+        with DB:
+            if process:
+                DB.execute("INSERT OR REPLACE INTO settings VALUES (?, ?, ?)", (args["printer"], option, process))
+            else:
+                DB.execute("DELETE FROM settings WHERE printer=? AND key=?", (args["printer"], option))
+        return as_text({"printer": args["printer"], "option": option, "process": process, "outcome": "saved"})
     if option in ("bff_spaghetti", "bff_spaghetti_pause") and type(enabled) is bool:  # BFF's own switches
         printer_id(args)
         with DB:
@@ -3061,6 +3090,7 @@ def _slice_request(rid, printer, source, file_name, choices_json, slots, copies,
     if user and user.get("parent"):  # a bundle uploaded for this printer brings its own machine preset
         machine = user.pop("parent")
     choices = json.loads(choices_json) if choices_json else {}
+    apply_default_process(printer, user, choices)
     process = choices.get("process")
     if process is not None and (not isinstance(process, str) or not user or process not in user["processes"]):
         choices.pop("process")  # a process profile that is not the user's is not a user choice
@@ -3313,7 +3343,7 @@ TOOLS = {
     "set_print_speed": (tool_set_print_speed, "Imposta la velocita' di stampa da 1 a 4. Solo durante una stampa o in pausa.", schema(level={"type": "integer", "description": "Velocita' 1-4"}, **KEY), True),
     "set_fan": (tool_set_fan, "Imposta la velocita' di una ventola da 0 a 100%.", schema(fan={"type": "string", "enum": ["part", "aux", "chamber"]}, percent={"type": "integer", "description": "0-100"}, **KEY), True),
     "set_detector": (tool_set_detector, "Attiva o disattiva un sensore xcam. Sensibilita' opzionale per l'arresto.", schema(module={"type": "string", "enum": list(DETECTOR_MODULES)}, enabled={"type": "boolean"}, sensitivity={"type": "string", "enum": list(SENSITIVITIES)}, **KEY), True),
-    "set_print_option": (tool_set_print_option, "Attiva o disattiva un'opzione di stampa. Per bff_flow_cali indica mode: auto, on o off (calibrazione del flusso all'avvio).", optional_props(("option", "idempotency_key"), option={"type": "string", "description": f"{', '.join([*PRINT_OPTIONS, 'bff_spaghetti', 'bff_spaghetti_pause', 'bff_flow_cali'])}, or filament_sensor:<name> on Klipper"}, enabled={"type": "boolean"}, mode={"type": "string", "enum": list(FLOW_CALI_MODES), "description": "Solo per bff_flow_cali"}, **KEY), True),
+    "set_print_option": (tool_set_print_option, "Attiva o disattiva un'opzione di stampa. Per bff_flow_cali indica mode: auto, on o off (calibrazione del flusso all'avvio).", optional_props(("option", "idempotency_key"), option={"type": "string", "description": f"{', '.join([*PRINT_OPTIONS, 'bff_spaghetti', 'bff_spaghetti_pause', 'bff_flow_cali', 'bff_default_process'])}, or filament_sensor:<name> on Klipper"}, enabled={"type": "boolean"}, process={"type": "string", "description": "Solo per bff_default_process: il profilo di stampa predefinito della stampante, vuoto = quello integrato"}, mode={"type": "string", "enum": list(FLOW_CALI_MODES), "description": "Solo per bff_flow_cali"}, **KEY), True),
     "clear_errors": (tool_clear_errors, "Pulisce gli errori mostrati dalla stampante.", schema(**KEY), True),
     "dismiss_spaghetti": (tool_dismiss_spaghetti, "Falso allarme spaghetti: niente avvisi fino alla fine di questa stampa. Solo su richiesta dell'utente.", schema(), True),
     "prepare_skip_objects": (tool_prepare_skip_objects, "Prepara il salto di oggetti in stampa, irreversibile. Solo durante stampa o pausa." + CONFIRM_RULE, schema(obj_ids={"type": "array", "items": {"type": "integer"}, "description": "Id degli oggetti da saltare"}), True),

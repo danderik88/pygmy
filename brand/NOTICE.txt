@@ -1,0 +1,3 @@
+The wordmark "pygmy" in pygmy-logo-*.svg is set in Montserrat Regular, converted to outlines.
+Montserrat is licensed under the SIL Open Font License 1.1 (OFL-Montserrat.txt): free for any use, including commercial, and outlined text may be embedded in a logo.
+The mark (the orca P) is drawn by hand for Pygmy.
