@@ -115,3 +115,12 @@ class AppPage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeveralPlates(unittest.TestCase):
+    """A request that came out as several plates lists them all (2026-11-23: only the first one showed)."""
+    def test_the_app_lists_every_plate_with_print_queue_and_add_all(self):
+        html = (Path(__file__).resolve().parents[1] / "src" / "pygmy" / "app.html").read_text()
+        for needle in ("pnReadyMany", "paintPlates", 'data-pp="', 'data-pq="', 'data-pall="1"', 'id="pnplates"'):
+            self.assertIn(needle, html)
+        self.assertIn("(r.plates || []).length > 1", html)
