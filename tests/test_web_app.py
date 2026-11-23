@@ -107,3 +107,32 @@ class WebApp(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Compression(WebApp):
+    """A 5G link relayed by Tailscale stalled on the 200 KB page (2026-11-23): text answers go out gzipped."""
+    def fetch(self, path, accept):
+        req = urllib.request.Request(self.base + path)
+        if accept:
+            req.add_header("Accept-Encoding", accept)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.headers.get("Content-Encoding"), resp.read()
+
+    def test_the_page_is_gzipped_when_the_client_accepts_it(self):
+        import gzip
+        plain = self.fetch("/app", None)
+        zipped = self.fetch("/app", "gzip")
+        self.assertIsNone(plain[0])
+        self.assertEqual(zipped[0], "gzip")
+        self.assertEqual(gzip.decompress(zipped[1]), plain[1])
+        self.assertLess(len(zipped[1]), len(plain[1]) / 2)
+
+    def test_images_are_not_recompressed(self):
+        self.assertIsNone(self.fetch("/icon-192.png", "gzip")[0])
+
+    def test_the_json_answers_of_the_app_are_gzipped_too(self):
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode()
+        req = urllib.request.Request(self.base + "/", data=body, method="POST", headers={
+            "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json", "Accept-Encoding": "gzip"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            self.assertEqual(resp.headers.get("Content-Encoding"), "gzip")

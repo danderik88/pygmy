@@ -7,6 +7,7 @@ an observed outcome; an unclear outcome locks the printer until `recheck`.
 """
 # ponytail: no MCP SDK, these tools need neither SSE nor sessions; adopt it if streaming is ever needed.
 import base64
+import gzip
 import hashlib
 import hmac
 import io
@@ -3476,11 +3477,21 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
+    def packed(self, data):
+        """(data, gzipped). Text answers shrink to a third: a 5G link relayed by Tailscale stalls on 200 KB pages."""
+        if len(data) < 1400 or "gzip" not in self.headers.get("Accept-Encoding", ""):
+            return data, False
+        return gzip.compress(data, 6), True
+
     def reply(self, code, body=None):
         data = b"" if body is None else json.dumps(body).encode()
+        data, zipped = self.packed(data)
         self.send_response(code)
         if data:
             self.send_header("Content-Type", "application/json")
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -3525,8 +3536,14 @@ class Handler(BaseHTTPRequestHandler):
     do_DELETE = refuse
 
     def send_bytes(self, ctype, data):
+        zipped = False
+        if ctype.startswith(("text/", "application/json")):  # images are already compressed
+            data, zipped = self.packed(data)
         self.send_response(200)
         self.send_header("Content-Type", ctype)
+        if zipped:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
