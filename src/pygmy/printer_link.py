@@ -116,13 +116,14 @@ def fan_pct(value):
     return None if speed is None else round(speed * 100 / 15)
 
 
-LIGHT_LABELS = {"chamber_light": "Chamber light", "work_light": "Work light"}
+LIGHT_LABELS = {"chamber_light": "Chamber light"}
 
 
 def light_entries(raw):
-    """The printer's lights from lights_report: chamber_light always, work_light when the model reports it."""
+    """The printer's lights from lights_report. Only chamber_light: the work_light node some models report
+    (P2S, checked by hand on Bravo 2026-11-25) lights nothing, the printer's lamps all answer to chamber_light."""
     modes = {x.get("node"): x.get("mode") for x in raw.get("lights_report") or [] if isinstance(x, dict)}
-    nodes = ["chamber_light"] + (["work_light"] if "work_light" in modes else [])
+    nodes = ["chamber_light"]
     return [{"name": n, "label": LIGHT_LABELS[n], "on": modes.get(n) == "on" if n in modes else None}
             for n in nodes]
 

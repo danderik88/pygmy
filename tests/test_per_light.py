@@ -28,13 +28,12 @@ class SnapshotLights(unittest.TestCase):
             {"name": "neopixel chamber_led", "label": "Chamber led", "on": True}])
         self.assertTrue(snap["chamber_light"])  # legacy field kept
 
-    def test_bambu_chamber_and_work_light(self):
+    def test_bambu_work_light_node_is_not_listed(self):
+        # the P2S reports a work_light node that lights nothing; the lamps answer to chamber_light
         raw = {"lights_report": [{"node": "chamber_light", "mode": "on"},
                                  {"node": "work_light", "mode": "off"}]}
         snap = to_snapshot(raw)
-        self.assertEqual(snap["lights"], [
-            {"name": "chamber_light", "label": "Chamber light", "on": True},
-            {"name": "work_light", "label": "Work light", "on": False}])
+        self.assertEqual(snap["lights"], [{"name": "chamber_light", "label": "Chamber light", "on": True}])
         self.assertTrue(snap["chamber_light"])
 
     def test_bambu_without_report_keeps_an_unknown_chamber_light(self):
