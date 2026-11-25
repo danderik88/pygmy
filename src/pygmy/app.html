@@ -330,6 +330,8 @@ select { font: 16px var(--sans); color: var(--fg); background: var(--panel2); bo
 <section class="pane" id="tab-new" hidden>
   <div class="row"><h2 style="margin:0">Print now</h2><span style="display:flex;gap:8px"><button class="btn" id="pnclear" hidden>Cancel</button><button class="btn" id="filesbtn">Files</button></span></div>
 
+  <div class="card" id="pnready" hidden></div>
+
   <div class="step" id="step1">
     <div class="card">
       <div class="stephead"><span class="stepnum">1</span><b>Model</b></div>
@@ -1898,7 +1900,46 @@ function pnReset() {
 }
 
 // Queue card: the jobs of the printer picked in step 2.
+// Sliced requests wait here until they are printed or queued: a print can be put off for days, so nothing expires.
+const remainingPlates = r => (r.plates || []).slice(r.plate_index || 0);
+async function loadReady() {
+  const box = $("pnready");
+  let list = [];
+  try { list = (await rpc("print_requests", {})).requests.filter(r => r.status === "ready" && r.file_id != null && r.id !== PN.id); } catch (e) {}
+  box.hidden = !list.length;
+  box.innerHTML = list.length ? `<b>Ready to print</b>` + list.map(r => {
+    const n = remainingPlates(r).length, hours = Math.floor((Date.now() / 1000 - r.created) / 3600);
+    const age = hours >= 48 ? `${Math.floor(hours / 24)} days ago` : hours >= 1 ? `${hours} h ago` : "just now";
+    return `<div class="file"><span style="flex:1;min-width:0"><b>${esc(r.file_name || r.url || "Model")}</b>
+      <span class="note">${n} plate${n === 1 ? "" : "s"} · ${age}</span></span>
+      <span style="display:flex;gap:6px;flex:none"><button class="btn" data-rm="${r.id}">Remove</button><button class="btn" data-rr="${r.id}">Open</button></span></div>`;
+  }).join("") : "";
+}
+$("pnready").onclick = async e => {
+  const rm = e.target.closest("button[data-rm]");
+  if (rm) {  // two taps, so a stray touch never throws a slice away
+    if (rm.dataset.sure !== "1") {
+      rm.dataset.sure = "1"; rm.textContent = "Sure?";
+      return void setTimeout(() => { rm.dataset.sure = ""; rm.textContent = "Remove"; }, 3000);
+    }
+    return act(async () => {  // each "started" moves a request on by one plate; the last one closes it
+      const r = (await rpc("print_requests", {})).requests.find(x => x.id === Number(rm.dataset.rm));
+      for (const _ of remainingPlates(r || {})) await rpc("print_requests", { id: Number(rm.dataset.rm), status: "started" }).catch(() => {});
+      await loadReady();
+    }, "Removed");
+  }
+  const b = e.target.closest("button[data-rr]"); if (!b) return;
+  let r = null;
+  try { r = (await rpc("print_requests", {})).requests.find(x => x.id === Number(b.dataset.rr)); } catch (err) { return toast(err.message); }
+  if (!r || r.status !== "ready") return loadReady();
+  PN.id = r.id; PN.reqPrinter = PN.printer = r.printer; PN.name = r.file_name || "Model";
+  PN.facts = { plates: remainingPlates(r).length, colors: [] }; PN.slots = []; PN.sliced = true; PN.fileId = null; PN.stale = false;
+  pnEdit = 4;
+  $("pnready").hidden = true;
+  await pnReady({ ...r, plates: remainingPlates(r) });
+};
 async function loadQueue() {
+  loadReady();
   const p = PN.printer || PRINTER;
   $("queuename").textContent = nameOf(p);
   try {
@@ -2225,7 +2266,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   $("filesview").hidden = true;
   document.querySelector("main").hidden = b.dataset.t !== "main";
   if (b.dataset.t === "tab-fil") loadFil();
-  if (b.dataset.t === "tab-new") loadNew();
+  if (b.dataset.t === "tab-new") { loadNew(); loadReady(); }
   scrollTo(0, 0);
 });
 $("pname").textContent = nameOf(PRINTER);
