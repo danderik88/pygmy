@@ -15,8 +15,9 @@ class LateStop(unittest.TestCase):
         db = sqlite3.connect(":memory:")
         db.execute("CREATE TABLE locks (printer TEXT PRIMARY KEY, key TEXT)")
         db.execute("CREATE TABLE commands (key TEXT PRIMARY KEY, printer TEXT, action TEXT, params TEXT, outcome TEXT, detail TEXT)")
+        db.execute("CREATE TABLE settings (printer TEXT, key TEXT, value TEXT)")
         self.db = db
-        self.state = {"connected": True, "state": "FAILED"}
+        self.state ={"connected": True, "state": "FAILED"}
         self.link = mock.Mock(spec=server.MoonrakerLink)
         for p in (mock.patch.object(server, "DB", db), mock.patch.object(server, "read_status", lambda a: self.state),
                   mock.patch.object(server, "printer_id", lambda a: a["printer"]),
@@ -55,6 +56,19 @@ class LateStop(unittest.TestCase):
         with self.assertRaises(server.ToolError):
             server.assert_unlocked("e3k", "start")
         self.assertTrue(self.locked())
+
+    def test_the_screen_does_not_call_the_printer_busy_for_a_stop_that_settled(self):
+        self.lock("stop")
+        with mock.patch.object(server, "blocked_reason", lambda c, raw: None), \
+                mock.patch.object(server, "load_profile", lambda a: {}), \
+                mock.patch.object(server, "printer_filaments", lambda a, r: []), \
+                mock.patch.object(server, "app_names_models", lambda: ({}, {})), \
+                mock.patch.object(server, "flow_cali_shown", lambda a, r: False), \
+                mock.patch.object(server, "profile_of", lambda a: None), \
+                mock.patch.dict(server.CFG, {"printers": {"e3k": "x"}}):
+            info = server.tool_printer_info({"printer": "e3k"})
+        self.assertIn('"free": true', info[0]["text"])
+        self.assertFalse(self.locked())
 
     def test_recheck_still_works_by_hand(self):
         self.lock("start")

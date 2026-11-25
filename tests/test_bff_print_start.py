@@ -168,7 +168,7 @@ class PrintStartTest(unittest.TestCase):
         self.prepare(file_id)
 
     def test_prepare_refuses_unknown_file_busy_printer_and_hms(self):
-        with self.assertRaisesRegex(server.ToolError, "caricato"):
+        with self.assertRaisesRegex(server.ToolError, "not on Pygmy"):
             self.prepare(999)
         file_id = self.upload()["file_id"]
         self.state["state"] = "RUNNING"

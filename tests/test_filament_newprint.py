@@ -197,9 +197,9 @@ class FilamentNewPrint(unittest.TestCase):
 
     def test_plate_mismatch(self):
         self.assertIsNone(server.plate_mismatch("a1", {"plate": None}))
-        self.assertIn("dichiara", server.plate_mismatch("a1", {"plate": "Cool Plate"}))
+        self.assertIn("say which plate", server.plate_mismatch("a1", {"plate": "Cool Plate"}))
         server.tool_set_plate({"printer": "a1", "plate": "Textured PEI Plate"})
-        self.assertIn("piatto montato Textured PEI Plate", server.plate_mismatch("a1", {"plate": "Cool Plate"}))
+        self.assertIn("The Textured PEI Plate plate is set", server.plate_mismatch("a1", {"plate": "Cool Plate"}))
         self.assertIsNone(server.plate_mismatch("a1", {"plate": "Textured PEI Plate"}))
 
     def test_old_db_gets_plate_column(self):

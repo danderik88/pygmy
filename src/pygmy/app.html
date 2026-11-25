@@ -660,7 +660,7 @@ const EN = [
   [/^no device named/, "That device is no longer in the list"],
   [/devices need BFF in control mode/, "Device management needs Pygmy in control mode, not on this build"],
 ];
-const en = m => { const hit = EN.find(([re]) => re.test(m)); return !hit ? "Command refused by Pygmy" : typeof hit[1] === "function" ? hit[1](m) : hit[1]; };
+const en = m => { const hit = EN.find(([re]) => re.test(m)); return !hit ? m : typeof hit[1] === "function" ? hit[1](m) : hit[1]; };
 // Request notes are English already: translate the ones that match, leave the others as they are.
 const enNote = m => (EN.find(([re]) => re.test(m)) || [0, m])[1];
 async function rpcReal(name, args, translate = true) {
@@ -1678,22 +1678,28 @@ function answer(r) {
   const text = prompt(`Orca-Cad needs you${r.note ? ":\n" + r.note : ""}`, "");
   if (text && text.trim()) act(() => rpc("reply_request", { request_id: r.id, reply: text.trim() }), "Sent to Orca-Cad");
 }
-async function askPlate(r) {
+let plateThen = null;  // what to do once a plate is picked outside an Orca-Cad request (the Print button)
+async function askPlate(r, then = null, printer = "") {
+  plateThen = then; $("platepick").dataset.printer = printer;
   let types = [];
-  try { types = (await rpc("printer_info", {})).choices.plate_types || []; } catch (e) {}
+  try { types = (await rpc("printer_info", printer ? { printer } : {})).choices.plate_types || []; } catch (e) {}
   $("ppnote").textContent = r.note || "";
   $("ppopts").innerHTML = types.map(t => `<button class="opt" data-plate="${esc(t)}">${esc(plateLabel(t))}</button>`).join("");
-  $("platepick").dataset.rid = r.id;
+  $("platepick").dataset.rid = r.id || "";
   $("platepick").hidden = false;
 }
 $("platepick").onclick = e => {
-  const plate = e.target.dataset.plate, rid = Number($("platepick").dataset.rid);
-  if (e.target.id === "platepick" || e.target.id === "ppclose") { $("platepick").hidden = true; return; }
+  const plate = e.target.dataset.plate, rid = Number($("platepick").dataset.rid), printer = $("platepick").dataset.printer;
+  if (e.target.id === "platepick" || e.target.id === "ppclose") { $("platepick").hidden = true; plateThen = null; return; }
   if (!plate) return;
   $("platepick").hidden = true;
-  // Same as the Filament tab, then the request goes back to Orca-Cad.
-  act(async () => { await rpc("set_plate", { plate }); return rpc("reply_request", { request_id: rid, reply: `Plate set: ${plate}` }); },
-      `Plate: ${plate}`);
+  const then = plateThen; plateThen = null;
+  // Same as the Filament tab, then the request goes back to Orca-Cad, or the print the person just tried carries on.
+  act(async () => {
+    await rpc("set_plate", printer ? { plate, printer } : { plate });
+    if (rid) await rpc("reply_request", { request_id: rid, reply: `Plate set: ${plate}` });
+    if (then) await then();
+  }, `Plate: ${plateLabel(plate) || plate}`);
 };
 // A blocked request still needs the user (a MakerWorld code): ask once for each new question.
 function offerAnswer(q) {
@@ -1874,7 +1880,11 @@ async function pnStartPrint(fileId, reqId, printer, rest = []) {
       document.querySelector('.tabs [data-t="main"]').click();
     }, "Print started"));
     pnPreview(fileId, $("cthumb"));  // the sliced plate next to the camera photo
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    // The plate on the printer is unknown or different: ask which one is mounted, then start again (a toast alone vanished and left Print doing nothing)
+    if (/needs the .* plate|plate is set/i.test(e.message)) return askPlate({ note: e.message }, () => pnStartPrint(fileId, reqId, printer, rest), alias);
+    toast(e.message);
+  }
 }
 $("pnprint").onclick = () => PN.fileId && pnStartPrint(PN.fileId, PN.id, PN.printer);
 $("pnqueue").onclick = () => PN.fileId && act(async () => {

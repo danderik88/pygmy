@@ -135,7 +135,7 @@ class ToolError(Exception):
 def printer_id(args):
     alias = args.get("printer")
     if alias not in CFG["printers"]:
-        raise ToolError("Stampante sconosciuta. Alias validi: " + ", ".join(sorted(CFG["printers"])))
+        raise ToolError("Unknown printer. Valid names: " + ", ".join(sorted(CFG["printers"])))
     return CFG["printers"][alias]
 
 
@@ -697,7 +697,7 @@ def load_profile(alias):
 
 def require_support(alias, action):
     if load_profile(alias).get("supports", {}).get(action) is not True:
-        raise ToolError(f"Il profilo di {alias} non abilita {action}")
+        raise ToolError(f"This printer's profile does not allow {action}")
 
 
 def limit_value(limits, name):
@@ -756,13 +756,13 @@ def settle_lock(alias):
 
 def blocked_reason(action, raw):
     if raw.get("connected") is not True:
-        return "stampante non connessa"
+        return "The printer is not connected"
     allowed = ACTIONS[action]["from"]
     if allowed and raw.get("state") not in allowed:
-        return f"non applicabile nello stato {raw.get('state')}"
+        return f"Not possible while the printer is {raw.get('state')}"
     if action == "start" and raw.get("hms_errors"):
         details = "; ".join(str(e.get("description") or e.get("code")) for e in raw["hms_errors"])
-        return f"errori HMS attivi: {details}"
+        return f"The printer reports HMS errors: {details}"
     return None
 
 
@@ -1044,16 +1044,16 @@ def inspect_3mf(data):
             info = metadata(archive, "Metadata/slice_info.config").decode()
         model, nozzle = settings["printer_model"], settings["nozzle_diameter"][0]
     except (zipfile.BadZipFile, zlib.error, KeyError, IndexError, TypeError, ValueError, OSError, NotImplementedError, RuntimeError):
-        raise ToolError("File non valido: serve un 3MF affettato") from None
+        raise ToolError("Not a valid file: a sliced 3MF is needed") from None
     if len(plates) != 1:  # one sliced plate, any number: a picked plate of a project keeps its own (2026-11-15)
-        raise ToolError("Serve un 3MF affettato con una sola piastra")
+        raise ToolError("A sliced 3MF with a single plate is needed")
     filaments = sorted(set(re.findall(r'<filament\b[^>]*\stype="([^"]+)"', info)))
     if not filaments:
-        raise ToolError("File non valido: serve un 3MF affettato")
+        raise ToolError("Not a valid file: a sliced 3MF is needed")
     prediction = re.search(r'key="prediction" value="(\d+)"', info)
     weight = re.search(r'key="weight" value="([\d.]+)"', info)
     if not (isinstance(model, str) and isinstance(nozzle, str) and prediction):
-        raise ToolError("File non valido: serve un 3MF affettato")
+        raise ToolError("Not a valid file: a sliced 3MF is needed")
     # Only for the summary and the spool warning, and Orca 2.4.2 leaves it empty.
     weight_g = float(weight[1]) if weight else weight_from_length(info, settings, filaments[0])
     plate = settings.get("curr_bed_type")
@@ -1197,7 +1197,7 @@ def load_upload(file_id):
     if type(file_id) is int:
         row = DB.execute("SELECT name, model, nozzle, filament, time_s, weight_g, plate FROM uploads WHERE file_id=?", (file_id,)).fetchone()
     if row is None:
-        raise ToolError("File non caricato tramite questo server: usa prima l'upload")
+        raise ToolError("This file is not on Pygmy: upload or slice it first")
     return dict(zip(("name", "model", "nozzle", "filament", "time_s", "weight_g", "plate"), row))
 
 
@@ -1208,9 +1208,9 @@ def plate_mismatch(alias, upload):
         return None
     mounted = plate_type(alias)
     if mounted is None:
-        return f"il file richiede il piatto {wanted}: dichiara il piatto montato nella scheda Filament"
+        return f"This file needs the {wanted} plate: say which plate is on the printer"
     if mounted != wanted:
-        return f"piatto montato {mounted}, il file richiede {wanted}"
+        return f"The {mounted} plate is set, this file needs the {wanted} plate"
     return None
 
 
@@ -1690,8 +1690,11 @@ def tool_printer_info(args):
     except ToolError:
         slicer_model = None
     reason = blocked_reason("start", raw)
-    if reason is None and DB is not None and DB.execute("SELECT 1 FROM locks WHERE printer=?", (alias,)).fetchone():
-        reason = "esito dell'ultimo comando sconosciuto: serve recheck"
+    if reason is None and DB is not None:  # same rule as the command itself: a late stop on Klipper settles here too
+        try:
+            assert_unlocked(alias, "start")
+        except ToolError:
+            reason = "the last command's outcome is unknown: run recheck"
     nozzle = (raw.get("nozzles") or [{}])[0]
     # The printer keeps reporting the last filament after an unload, so 255 must hide it.
     # ponytail: external spool only, like check_compatible; add AMS trays once one is connected and its data can be seen.
@@ -1759,7 +1762,7 @@ def tool_prepare_print_start(args):
         color = upload_color(args.get("file_id"))
         reason = blocked_reason("start", raw) or check_compatible(load_profile(alias), upload, raw, color, args.get("file_id")) or plate_mismatch(alias, upload)
         if reason:
-            raise ToolError(f"avvio su {alias}: {reason}")
+            raise ToolError(f"Can't start on {alias}: {reason}")
         jpeg = snapshot_jpeg(pid)
         weight = f", {upload['weight_g']} g" if upload["weight_g"] is not None else ""
         summary = (
@@ -2319,7 +2322,7 @@ def tool_dismiss_spaghetti(args):
     printer_id(args)
     watch = WATCHES.get(args["printer"])
     if not watch or watch.print is None:
-        raise ToolError("nessuna stampa sotto controllo spaghetti")
+        raise ToolError("No print is being watched for spaghetti")
     watch.muted = True
     if watch.verdict in ("warning", "failure"):
         watch.verdict = "dismissed"

@@ -20,7 +20,7 @@ class AppPrinters(unittest.TestCase):
     def test_plate_question_gets_a_list(self):
         self.assertIn("Which plate is on the printer?", PAGE)
         self.assertIn('if (/plate/i.test(r.note || "")) return askPlate(r);', PAGE)
-        self.assertIn('rpc("set_plate", { plate })', PAGE)
+        self.assertIn('rpc("set_plate", printer ? { plate, printer } : { plate })', PAGE)
 
     def test_ams_drawn_like_handy(self):
         for text in ('id="amsmini"', 'id="amscard"', "AMS-${u.unit}", "s.ams_units", '"Empty"', "in use"):
