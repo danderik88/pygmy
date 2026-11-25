@@ -9,20 +9,22 @@ webrtc:
 log:
   level: warn
 # The MJPEG printers (A1, P1) send ~1.5 frames/s with no timestamps: HA and ffmpeg viewers then probed
-# 30-70 s before the first frame. Wall-clock timestamps and a steady 10 fps bring it under 5 s.
+# 30-70 s before the first frame. The input timestamps stay at 25 fps whatever the real rate, so the stream clock ran
+# ~17x slow and a keyframe came every ~35 s: clients joining a running stream (HA) saw nothing. setpts=RTCTIME puts the
+# frames on the wall clock, then -r 10 fills the gaps: a keyframe every 2 s of real time (checked 2026-11-25).
 # Only http sources (Pygmy's /stream/) use these; RTSP printers pass through untouched.
 ffmpeg:
   # -noautorotate: Pygmy already puts Moonraker's flip/rotation on each JPEG as an EXIF Orientation tag,
   # and ffmpeg applies that tag by itself; without this the h264_o<N> filters below turn a second time
   # (hflip+vflip twice = no turn at all, the "unflipped" Klipper webcam).
   http: "-noautorotate -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i {input}"
-  h264: "-c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264: "-vf setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
   # Klipper webcams mounted turned or mirrored (Moonraker's flip/rotation as EXIF Orientation 2..8).
   # go2rtc refuses #raw from its API, so the filters live here.
-  h264_o2: "-vf hflip -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o3: "-vf hflip,vflip -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o4: "-vf vflip -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o5: "-vf transpose=0 -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o6: "-vf transpose=1 -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o7: "-vf transpose=3 -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264_o8: "-vf transpose=2 -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o2: "-vf hflip,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o3: "-vf hflip,vflip,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o4: "-vf vflip,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o5: "-vf transpose=0,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o6: "-vf transpose=1,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o7: "-vf transpose=3,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264_o8: "-vf transpose=2,setpts=(RTCTIME-RTCSTART)/(TB*1000000) -c:v libx264 -r:v 10 -g:v 20 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency -pix_fmt:v yuv420p"
