@@ -122,6 +122,7 @@ input { font: 16px var(--sans); color: var(--fg); background: var(--panel2); bor
 .toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(10px + env(safe-area-inset-top)); background: var(--panel2); border: 1px solid var(--line); box-shadow: 0 6px 20px #0003;
   padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: 90vw; z-index: 30; }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
+.note.bad { font-size: 14px; font-weight: 600; color: var(--bad); }
 details.sec { border-top: 1px solid var(--line); padding-top: 12px; }
 details.sec summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
 details.sec summary::-webkit-details-marker { display: none; }
@@ -1530,9 +1531,9 @@ function pnNewModel() {
   pnPreview(null, $("pnthumb")); pnPreview(null, $("cthumb"));
   paintSteps();
 }
-function pnProgress(text) {
+function pnProgress(text, bad = false) {
   const el = PN.sliced ? $("pnsliceprog") : $("s1status");
-  el.hidden = !text; el.textContent = text;
+  el.hidden = !text; el.textContent = text; el.classList.toggle("bad", bad && !!text);  // a failure stands out from the progress notes
 }
 function pnFilePicker() {
   // Several meshes from one link: one checkbox per file, all checked (names come from the web: text only).
@@ -1806,7 +1807,7 @@ async function pnApply(r) {
   } else if (r.status === "failed") {
     $("pnresult").hidden = true;
     PN.sliced = !!PN.facts;  // a fetch that failed speaks in step 1, a slice in step 4
-    pnProgress(enNote(r.note || "Slicing failed"));
+    pnProgress(enNote(r.note || "Slicing failed"), true);
   }
 }
 async function pnPoll() {

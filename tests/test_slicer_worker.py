@@ -162,7 +162,7 @@ class SlicerBase(unittest.TestCase):
         self.state.slice_status = 422
         rid = server.upload_model("a1", "bad.stl", b"x", engine="server", slot="external")["request_id"]
         self.assertTrue(server.slice_once())
-        self.assertEqual(self.row(rid, "status", "note"), ("failed", "Could not slice this model"))
+        self.assertEqual(self.row(rid, "status", "note"), ("failed", "Could not slice this model: fail"))
         self.state.slice_status = 200
         rid2 = server.upload_model("a1", "good.stl", b"x", engine="server", slot="external")["request_id"]
         self.assertTrue(server.slice_once())
@@ -558,6 +558,23 @@ class SlicerBase(unittest.TestCase):
                          ("failed", "Too big for this printer: 200 × 150 × 90 mm, plate is 180 × 180 × 180 mm. "
                                     "Fits on: Workshop P1S"))
         self.assertEqual(self.state.requests[0]["other_machines"], ["Bambu Lab P1S 0.4 nozzle"])
+
+    def test_unreadable_file_says_so(self):
+        self.state.slice_status = 422
+        self.state.error_body = {"error": "orca exit 250 (code -6): The input model file to the slicer can not be parsed."}
+        rid = server.upload_model("a1", "odd.step", b"x", engine="server", slot="external")["request_id"]
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(server.slice_once())
+        self.assertEqual(self.row(rid, "status", "note"),
+                         ("failed", "The slicer can't read this file: export it as STL or 3MF and try again"))
+
+    def test_any_orca_failure_shows_orcas_words(self):
+        self.state.slice_status = 422
+        self.state.error_body = {"error": "orca exit 250 (code -6): Object is empty after slicing"}
+        rid = server.upload_model("a1", "x.stl", b"x", engine="server", slot="external")["request_id"]
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertTrue(server.slice_once())
+        self.assertEqual(self.row(rid, "status", "note"), ("failed", "Could not slice this model: Object is empty after slicing"))
 
     def test_secret_not_in_note(self):
         self.state.slice_status = 422

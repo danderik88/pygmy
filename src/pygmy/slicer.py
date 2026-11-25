@@ -270,7 +270,10 @@ def slice(model, filename, machine, filaments, choices, reorient, copies,
             # Orca's own words go to the log: "could not slice" alone hid the cause (2026-11-15)
             print(f"slicer 422: {str((fail or {}).get('error', ''))[-600:]}", file=sys.stderr, flush=True)
         if err.code in (400, 422):
-            raise SliceError("Could not slice this model") from None
+            if err.code == 422 and "can not be parsed" in str((fail or {}).get("error", "")):  # Orca could not read the file at all (some STEP files)
+                raise SliceError("The slicer can't read this file: export it as STL or 3MF and try again") from None
+            why = re.sub(r"^orca exit \d+ \(code -?\d+\):\s*", "", str((fail or {}).get("error", "") if err.code == 422 else "")).strip()
+            raise SliceError(f"Could not slice this model: {why[-200:]}" if why else "Could not slice this model") from None
         raise SliceError("Slicer not reachable") from None
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         raise SliceError("Slicer not reachable") from None

@@ -24,6 +24,10 @@ class PlatePrompt(unittest.TestCase):
     def test_unknown_refusals_show_their_reason_not_a_generic_text(self):
         self.assertNotIn("Command refused by Pygmy", APP)
 
+    def test_a_failed_slice_is_shown_as_an_error(self):
+        self.assertIn('pnProgress(enNote(r.note || "Slicing failed"), true)', APP)
+        self.assertIn(".note.bad { font-size: 14px; font-weight: 600; color: var(--bad); }", APP)
+
     def test_blocked_reasons_are_english(self):
         self.assertEqual(server.blocked_reason("start", {"connected": False}), "The printer is not connected")
 
