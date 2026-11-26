@@ -11,7 +11,7 @@
   <img alt="Status" src="https://img.shields.io/badge/status-early%20preview-orange">
 </p>
 
-<p align="center"><img src="assets/status.gif" width="260" alt="Printer status"></p>
+<p align="center"><img src="assets/overview.gif" width="300" alt="Pygmy on a phone: live camera, nozzle sheet and AMS drying"></p>
 
 > [!NOTE]
 > **Early preview.** Watch the first layers of every print and
@@ -87,7 +87,7 @@ arm64. Docker Desktop (Mac, Windows) is not tested: use a Linux VM there.
 </tr>
 </table>
 
-Also: Web Push and Telegram notifications with a photo, Home Assistant through MQTT, and an MCP server for AI agents.
+Also: a queue per printer, sliced files that wait under **Ready to print** until you print or remove them, Web Push and Telegram notifications with a photo, Home Assistant (entities and cameras), and an MCP server for AI agents.
 
 **Tested on** A1, A1 mini, P1P, P1S, P2S (H2D: status, pause, stop), with AMS, AMS 2 Pro, AMS lite and BMCU.
 
@@ -141,6 +141,23 @@ resumes a print by itself. Not on ARM.
 
 `PYGMY_OBICO_SENSITIVITY=low|medium|high` in `.env` (default medium). To test without a real failure: put a spaghetti
 photo at `<state dir>/spaghetti/test-<printer alias>.jpg` during a print; Pygmy uses it until you delete it.
+
+</details>
+
+<details>
+<summary><b>Home Assistant</b> (entities and cameras)</summary>
+
+**Entities, over MQTT.** Put your Mosquitto broker in `.env` (`PYGMY_HA_MQTT_HOST`, `PYGMY_HA_MQTT_PORT`,
+`PYGMY_HA_MQTT_USER`, `PYGMY_HA_MQTT_PASSWORD`; create a login for Pygmy in the Mosquitto add-on) and run
+`./install.sh` again. Home Assistant finds everything by itself (MQTT discovery under `homeassistant`). Entities are
+named `<type>.pygmy_<printer>_<name>` (for example `sensor.pygmy_a1_progress`) and `sensor.pygmy_ams_<serial>_*` for
+each AMS. They cover state, progress, temperatures, the file, errors, spools, lights, the pause, resume and stop
+buttons, and the last photo of a print.
+
+**Cameras, over RTSP.** Add a Generic Camera per printer with the stream source `rtsp://<pygmy address>:8554/<printer>`
+and the user and password shown (hidden, copyable) in the app under Settings, Home Assistant. Printers that send JPEG
+(A1, A1 mini, P1P, P1S, Klipper webcams) are converted to H.264 by go2rtc with a keyframe every 2 seconds, so a client
+joining a running stream gets a picture within a few seconds.
 
 </details>
 

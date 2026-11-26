@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from pygmy import server  # noqa: E402
@@ -12,8 +13,8 @@ class PlatePrompt(unittest.TestCase):
     """A print refused for the plate must say so and ask which plate is on the printer (the user, 2026-11-25)."""
 
     def test_unknown_plate_is_said_in_english(self):
-        with unittest.mock.patch.object(server, "plate_type", lambda a: None), \
-                unittest.mock.patch.object(server, "link_of", lambda a: object()):
+        with mock.patch.object(server, "plate_type", lambda a: None), \
+                mock.patch.object(server, "link_of", lambda a: object()):
             msg = server.plate_mismatch("alpha", {"plate": "Cool Plate"})
         self.assertEqual(msg, "This file needs the Cool Plate plate: say which plate is on the printer")
 
@@ -33,5 +34,4 @@ class PlatePrompt(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    import unittest.mock  # noqa: F401
     unittest.main()

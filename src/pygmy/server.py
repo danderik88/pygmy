@@ -202,6 +202,7 @@ def watch_plates():
         time.sleep(5)
 
 
+SPAGHETTI_RUNNING = False  # the detector thread is up: the app says so when it is not (Docker once lost it silently)
 WATCHES = {}
 
 
@@ -389,6 +390,7 @@ def status_dict(args):
     units = onboard.ams_units(raw.get("ams"), raw.get("tray_now"), raw.get("ams_exist_bits"))
     if units:
         result["ams_units"] = units
+    result["spaghetti_engine"] = SPAGHETTI_RUNNING
     result["options"] = {**(result.get("options") or {}), "bff_spaghetti": spaghetti_watch_on(args["printer"]),
                          "bff_spaghetti_pause": spaghetti_pause_on(args["printer"])}
     if flow_cali_shown(args["printer"], raw):
@@ -4293,7 +4295,8 @@ def main():
         obico_token=env.get("BFF_OBICO_TOKEN", ""),
         obico_sensitivity=env.get("BFF_OBICO_SENSITIVITY", "medium"),
         obico_interval_s=float(env.get("BFF_OBICO_INTERVAL_S", "10")),
-        obico_frame_base=f"http://{env.get('BFF_LAN_BIND')}:{env.get('BFF_LAN_PORT', '8766')}",
+        # Where Obico fetches each frame from. Docker: its own container reaches the host as host.docker.internal.
+        obico_frame_base=env.get("BFF_OBICO_FRAME_BASE") or f"http://{env.get('BFF_LAN_BIND')}:{env.get('BFF_LAN_PORT', '8766')}",
     )
     if CFG["control"]:
         CFG["profiles"] = env["BFF_MCP_PROFILES"]
@@ -4307,8 +4310,12 @@ def main():
     threading.Thread(target=keep_streams, daemon=True).start()
     if DB is not None:
         threading.Thread(target=watch_plates, daemon=True).start()
+    global SPAGHETTI_RUNNING
     if CFG["obico_url"] and env.get("BFF_LAN_BIND"):
         threading.Thread(target=watch_spaghetti, daemon=True).start()
+        SPAGHETTI_RUNNING = True
+    else:
+        print("spaghetti detection is NOT running: set PYGMY_OBICO_URL and PYGMY_LAN_BIND", file=sys.stderr, flush=True)
     start_ha()
     start_notify()
     threading.Thread(target=onboard.keep_listening, daemon=True).start()

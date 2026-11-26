@@ -48,7 +48,8 @@ execFileSync("python3", [path.join(here, "build.py"), path.join(scratch, "sim.ht
 // PW_CHANNEL=chrome uses the installed Google Chrome instead of Playwright's own Chromium.
 const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 // Wide enough for the shell to keep the phone at 100 % (its fit() scales it below 894 px of height).
-const view = { viewport: { width: 1400, height: 1100 }, deviceScaleFactor: 1 };
+// HQ=1 renders at 2x for videos; KEEP=dir keeps the PNG frames of each scene (and skips the README GIF) for a better encoder.
+const view = { viewport: { width: 1400, height: 1100 }, deviceScaleFactor: process.env.HQ ? 2 : 1 };
 // Installed Chrome quits when its last context closes: one idle context keeps it up between scenarios.
 await browser.newContext();
 
@@ -147,6 +148,20 @@ const scenarios = {
     await close();
   },
 
+  // Video for a post: a printing P2S with its camera, the nozzle sheet, then AMS drying.
+  async promo_p2s() {
+    await open();
+    await pickPrinter("Lab P2S"); await page.waitForTimeout(3000); await shot(2500);
+    await click("#noztile"); await shot(1600);
+    await click("#dclose"); await shot(500);
+    await click('.tabs button[data-t="tab-fil"]'); await shot(1500);
+    await when(() => !!document.getElementById("drybtn")); await shot(800);
+    await click("#drybtn"); await shot(1400);
+    await click("#drygo"); await shot(2500);
+    await click('.tabs button[data-t="main"]'); await shot(1500);
+    await close();
+  },
+
   // AMS drying on a printer that has a heater in its AMS.
   async drying() {
     await open();
@@ -209,6 +224,7 @@ try {
     frames = 0;
     console.log("recording", name);
     await play();
+    if (process.env.KEEP) { fs.cpSync(dir, path.join(process.env.KEEP, name), { recursive: true }); console.log("kept", name, frames, "frames"); continue; }
     const out = path.join(outDir, name + ".gif");
     // 32 colours and a bayer dither like the earlier README GIFs; transparent pixels stay transparent.
     // diff_mode=rectangle re-encodes only the changed area of each frame (the camera, a sheet), so GIFs stay small.

@@ -2440,11 +2440,12 @@ function copyText(text) {
   t.remove();
 }
 // Where Home Assistant picks this camera up: the RTSP stream.
+const HA_ENTITIES = `<span class="note">Entities (MQTT)</span><p class="note">Pygmy publishes every printer to Home Assistant over MQTT, named <code>sensor.pygmy_&lt;printer&gt;_state</code>, <code>…_progress</code> and so on. It needs your Mosquitto broker: put <code>BFF_HA_MQTT_HOST</code>, <code>BFF_HA_MQTT_PORT</code>, <code>BFF_HA_MQTT_USER</code> and <code>BFF_HA_MQTT_PASSWORD</code> in the .env next to docker-compose.yml, then run <code>docker compose up -d</code>. Home Assistant finds the entities by itself (MQTT discovery).</p>`;
 function camOptions() {
-  if (!camUrls) return "";
+  if (!camUrls) return HA_ENTITIES;
   // The stream password is never shown, only copied.
   const line = (label, url) => `<div class="row"><span>${label}</span><code style="flex:1;word-break:break-all;font-size:12px">${esc(url.replace(/\/\/([^:@\/]+):[^@\/]+@/, "//$1:••••@"))}</code><button class="btn" data-copy="${esc(url)}">Copy</button></div>`;
-  return `<span class="note">Home Assistant camera</span>`
+  return HA_ENTITIES + `<span class="note">Home Assistant camera</span>`
     + (camUrls.rtsp ? line("RTSP stream", camUrls.rtsp) + `<p class="note">Add it in Home Assistant as a Generic Camera (stream source).</p>`
                     : `<p class="note">RTSP not set up on this server</p>`);
 }
@@ -2563,6 +2564,7 @@ function paintOpts() {
       (opts.map(([k, v, tool, arg]) =>
         `<div class="row"><span>${optLabel(k)}</span><button class="sw ${v ? "on" : ""}" data-k="${k}" data-tool="${tool}" data-arg="${arg}" data-v="${v}"></button></div>`).join("")
       || "<p>The printer has not reported its options yet.</p>")
+      + (extra.spaghetti_engine === false ? `<p class="note bad">Spaghetti detection is not running on this server: nothing watches your prints.</p>` : "")
       + (flow ? `<div class="row"><span>Flow calibration</span><select data-flow>`
           + ["auto", "on", "off"].map(m => `<option value="${m}"${m === flow ? " selected" : ""}>${m[0].toUpperCase() + m.slice(1)}</option>`).join("")
           + `</select></div><p class="note">Flow Dynamics Calibration before each print (On: always, Auto: the printer decides).</p>` : "")
@@ -2570,7 +2572,7 @@ function paintOpts() {
         ? `<div class="row"><span>Print profile</span><select data-proc><option value="">Built-in (OrcaSlicer)</option>`
           + info.choices.user_processes.map(n => `<option${n === info.choices.default_process ? " selected" : ""}>${esc(n)}</option>`).join("")
           + `</select></div><p class="note">The profile Standard printing uses on this printer. Your own Orca profiles, from Orca Cloud or uploaded.</p>` : ""))
-    + (camUrls ? sec("ha", "Home Assistant", "", camOptions()) : "")
+    + sec("ha", "Home Assistant", "", camOptions())
     // jog-capable (Klipper) printers don't need Expert mode; hide the whole Advanced section there
     + (jogFree ? "" : sec("adv", "Advanced", expert ? "Expert mode on" : "",
       `<div class="row"><span>Expert mode</span>${info && info.tested === false ? `<span class="note">Not tested on this model yet</span>` : ""}`

@@ -5,6 +5,11 @@ services:
     build: .
     network_mode: host
     env_file: .env
+    environment:
+      # Spaghetti detection: Obico (its own container) fetches each frame from this listener, which serves frames
+      # and streams only. Without it the detector never starts.
+      BFF_LAN_BIND: "0.0.0.0"
+      BFF_OBICO_FRAME_BASE: "http://host.docker.internal:8766"
     volumes:
       - pygmy-data:/var/lib/pygmy
     restart: unless-stopped
@@ -27,6 +32,8 @@ services:
       dockerfile: Containerfile.cpu
     ports:
       - "127.0.0.1:3333:3333"  # only Pygmy asks it; it fetches each frame from Pygmy's LAN listener
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # the host, where the app listens on the host network
     restart: unless-stopped
 
   go2rtc:  # live camera, WebRTC and RTSP for Home Assistant
