@@ -738,8 +738,17 @@ def assert_unlocked(alias, action=None):
             return
         except ToolError:
             pass
+    if row and row[0] == "start" and not isinstance(link_of(alias), MoonrakerLink):
+        # A start the printer never ran leaves it idle: nothing is going to happen, so release instead of
+        # leaving "busy" on a printer that is doing nothing. A printer that is preparing or printing keeps the lock.
+        try:
+            if read_status(alias).get("state") in ("IDLE", "FINISH", "FAILED"):
+                settle_lock(alias)
+                return
+        except ToolError:
+            pass
     if row or DB.execute("SELECT 1 FROM locks WHERE printer=?", (alias,)).fetchone():
-        raise ToolError(f"Esito dell'ultimo comando su {alias} sconosciuto: usa recheck prima di altri comandi")
+        raise ToolError(f"The last command on {alias} has an unknown outcome: run recheck before sending another")
 
 
 def settle_lock(alias):
@@ -811,6 +820,24 @@ def wait_for_outcome(alias, action, params):
             return state, True
         time.sleep(POLL_S)
     return state, False
+
+
+def start_not_seen_note(alias, params):
+    """Say what the printer did with a start it never ran, instead of a bare "outcome unknown"."""
+    try:
+        raw = read_status(alias)
+        sent = load_upload(params["file_id"])["name"] if isinstance(params, dict) else None
+    except (ToolError, KeyError):
+        return ""
+    state = raw.get("state")
+    if state not in ("IDLE", "FINISH", "FAILED"):
+        return ""
+    note = f"the printer is still {state}: it did not start the job"
+    if sent and raw.get("subtask_name") == sent.replace(".3mf", "").replace(".gcode", ""):
+        note = f"the printer received the job but went back to {state} without loading the file: it rejected the file"
+    if raw.get("print_error"):
+        note += f" (print error {raw['print_error']})"
+    return note
 
 
 def consume_token(token, alias, action):
@@ -943,7 +970,8 @@ def execute(alias, action, params, key, token=None):
                 if fid is not None:
                     pop_queued(alias, fid)
             return finish(key, alias, action, params, "confirmed", f"osservato stato {state}")
-        return {"printer": alias, "action": action, "outcome": "unknown", "detail": UNKNOWN}
+        note = start_not_seen_note(alias, params) if action == "start" else ""
+        return {"printer": alias, "action": action, "outcome": "unknown", "detail": f"{note}; {UNKNOWN}" if note else UNKNOWN}
 
 
 def command_reply(result):

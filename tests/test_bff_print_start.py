@@ -327,8 +327,21 @@ class PrintStartTest(unittest.TestCase):
         token = payload(self.prepare(file_id))["confirm_token"]
         with self.assertRaisesRegex(server.ToolError, "unknown"):
             self.confirm(token)
+        idle = self.state["state"]
+        self.state["state"] = "PREPARE"  # preparing: the start may still be taking effect, so the lock holds
         with self.assertRaisesRegex(server.ToolError, "recheck"):
             self.prepare(file_id)
+        self.state["state"] = idle
+
+    def test_an_idle_printer_after_a_silent_start_is_freed_without_recheck(self):
+        self.link.start_print.side_effect = None
+        self.link.start_print.return_value = True  # sent, but the printer never starts and stays idle
+        file_id = self.upload()["file_id"]
+        token = payload(self.prepare(file_id))["confirm_token"]
+        with self.assertRaisesRegex(server.ToolError, "unknown"):
+            self.confirm(token)
+        self.prepare(file_id)  # no recheck needed: the printer is doing nothing
+        self.assertIsNone(server.DB.execute("SELECT 1 FROM locks WHERE printer='a1'").fetchone())
 
     def test_recheck_frees_a_start_that_never_began(self):
         self.locked_after_silent_start()

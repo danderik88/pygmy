@@ -591,7 +591,7 @@ async function redeem(code) {
   if (p) { PRINTER = p; try { localStorage.setItem("bff.printer", p); } catch (x) {} history.replaceState(null, "", location.pathname); } }
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
-function toast(text) { const t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 4000); }
+function toast(text, ms = 4000) { const t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, ms); }
 function askToken() { $("login").hidden = false; }
 function key() { return "app-" + crypto.getRandomValues(new Uint32Array(3)).join("-"); }
 
@@ -900,7 +900,7 @@ function held(k, v) {
 }
 async function act(fn, ok) {
   busy = true; render(last);
-  try { await fn(); if (ok) toast(ok); } catch (e) { toast(e.message); }
+  try { await fn(); if (ok) toast(ok); } catch (e) { toast(e.message, 12000); }  // a refusal is long and says why: leave time to read it
   busy = false; try { render(await rpc("status", {})); } catch (e) {}
 }
 
@@ -1745,6 +1745,9 @@ async function pnReady(r) {
   $("pnresult").hidden = false;
   $("pnprint").hidden = busy;
   $("pnbusy").hidden = !busy;
+  $("pnbusy").textContent = PN.info && PN.info.not_free_reason
+    ? `Can't start now: ${PN.info.not_free_reason.replace(/^./, (c) => c.toLowerCase())}. You can add this job to its queue.`
+    : "The printer is busy: add this job to its queue.";
   paintSteps();
 }
 // Several plates (a bundle that does not fit one plate, or a multi-plate project sliced whole): one row each.
@@ -1754,7 +1757,11 @@ async function pnReadyMany(r) {
   try { PN.info = await rpc("printer_info", { printer: PN.printer }); ninfo = PN.info; } catch (e) {}
   PN.busy = !!(PN.info && PN.info.free === false);
   $("pnsliceprog").hidden = true; $("pnwarn").hidden = true; $("pnresult").hidden = false;
-  $("pnbusy").hidden = !PN.busy; $("pnthumb").hidden = true; $("pnmeta").textContent = ""; $("pnacts").hidden = true;
+  $("pnbusy").hidden = !PN.busy;
+  $("pnbusy").textContent = PN.info && PN.info.not_free_reason
+    ? `Can't start now: ${PN.info.not_free_reason.replace(/^./, (c) => c.toLowerCase())}. You can add this job to its queue.`
+    : "The printer is busy: add this job to its queue.";
+  $("pnthumb").hidden = true; $("pnmeta").textContent = ""; $("pnacts").hidden = true;
   paintPlates(); paintSteps();
 }
 function paintPlates() {
@@ -1867,6 +1874,8 @@ async function pnStartPrint(fileId, reqId, printer, rest = []) {
     ask("Start this print?", prep, "Start print", false, t => act(async () => {
       // Sending takes a few seconds (upload, light, checks): say so, or the screen looks stuck (the user)
       pnProgress("Sending the file to the printer…"); $("pnprint").disabled = $("pnqueue").disabled = true;
+      // Also on the Files page, where the line above is not shown: stay on screen until the printer answers (up to ~3 min)
+      toast("Sending the file to the printer… waiting for it to start (up to 3 minutes)", 240000);
       try {
         await rpc("confirm_print_start", { token: t, idempotency_key: key(), printer: alias });
       } finally {

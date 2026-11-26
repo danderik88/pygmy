@@ -11,7 +11,8 @@ class SignInWindowCloses(unittest.TestCase):
         proc = mock.Mock(poll=mock.Mock(return_value=None))
         state = {"in": False}
         with mock.patch.object(s, "_spawn", return_value=proc), mock.patch.object(s, "_end"), \
-                mock.patch.object(s, "_orca_conf"), mock.patch.object(s, "orca_logged_in", lambda: state["in"]):
+                mock.patch.object(s, "_orca_conf"), mock.patch.object(s, "orca_logged_in", lambda: state["in"]), \
+                mock.patch.object(s, "_drive_login"):  # a real login thread would fail later and write "failed" into other tests' state
             s.start_login()
             s.gui_tick()
             self.assertIsNotNone(s._GUI["login"])
