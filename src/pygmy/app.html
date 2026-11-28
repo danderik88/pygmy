@@ -1586,21 +1586,33 @@ function pnModelReady() {
   paintSteps();
   loadPnInfo();
 }
+// The app's two uploads share the key and the refusals: /model/ goes to the slicer, /upload/ stores a sliced file.
+async function putFile(path, f) {
+  const resp = await fetch(path, { method: "PUT", headers: { "Authorization": "Bearer " + token }, body: f });
+  if (resp.status === 401) { askToken(); throw new Error("invalid key"); }
+  if (resp.status === 413) throw new Error("File too big: 100 MB max");
+  const body = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(en(body.errore || ""));
+  return body;
+}
 $("mfile").onchange = async () => {
   const f = $("mfile").files[0]; $("mfile").value = ""; if (!f) return;
   if (f.size > 100 * 1024 * 1024) return toast("File too big: 100 MB max");
+  if (/\.gcode\.3mf$/i.test(f.name)) {  // already sliced: a ready file for the Files page, not a slice request
+    try {
+      await putFile(`/upload/${encodeURIComponent(f.name)}`, f);
+      toast(`Sliced file added: ${f.name}`);
+      showFiles();
+    } catch (e) { toast(e.message, 12000); }
+    return;
+  }
   if (!ninfo) await loadStep2();
   const printer = PN.printer || PRINTER;
   pnNewModel();
   pnProgress(`Uploading ${f.name}…`);
   try {
     const draft = serverSlicer() ? "?draft=1" : "";
-    const resp = await fetch(`/model/${encodeURIComponent(printer)}/${encodeURIComponent(f.name)}${draft}`,
-      { method: "PUT", headers: { "Authorization": "Bearer " + token }, body: f });
-    if (resp.status === 401) { askToken(); throw new Error("invalid key"); }
-    if (resp.status === 413) throw new Error("File too big: 100 MB max");
-    const body = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(en(body.errore || ""));
+    const body = await putFile(`/model/${encodeURIComponent(printer)}/${encodeURIComponent(f.name)}${draft}`, f);
     if (!serverSlicer()) { pnProgress(""); return toast("Sent to Orca-Cad"); }
     PN.id = body.id; PN.reqPrinter = printer; PN.facts = body.facts || { plates: 1, colors: [] }; PN.name = f.name;
     pnModelReady();

@@ -356,6 +356,7 @@ class PrinterLink:
         self.drops = 0  # Times the link went from connected to disconnected; server.py resets the axes on change.
         self.sequence = 0
         self.ams_serials = {}  # AMS unit id (int) -> {"serial": str|None, "model": str}
+        self.start_reply = None
 
     def feed(self, message):
         report = message.get("print")
@@ -363,6 +364,16 @@ class PrinterLink:
             with self.lock:
                 merge(self.raw, report)
                 self.last_report = self.clock()
+                if report.get("command") == "project_file":
+                    reply = {"at": time.time()}
+                    for key in ("result", "reason"):
+                        if key in report:
+                            reply[key] = report[key]
+                    if "err_code" in report:
+                        reply["err_code"] = report["err_code"]
+                    elif "error_code" in report:
+                        reply["err_code"] = report["error_code"]
+                    self.start_reply = reply
                 for unit in (report.get("ams") or {}).get("ams") or []:
                     self._apply_ams_fallback(unit)
         info = message.get("info")

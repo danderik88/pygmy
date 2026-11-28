@@ -808,6 +808,7 @@ def wait_for_outcome(alias, action, params):
     profile = load_profile(alias)
     limit = profile.get(f"{action}_timeout_s", profile.get("command_timeout_s", DEFAULT_TIMEOUT_S))
     deadline = time.monotonic() + float(limit)
+    started = time.time() - 5  # margin: the reply may be stamped just before the wait starts
     state = None
     while time.monotonic() < deadline:
         try:
@@ -818,6 +819,14 @@ def wait_for_outcome(alias, action, params):
         state = raw.get("state")
         if observed(action, params, raw):
             return state, True
+        if action == "start":
+            # A printer that answered "fail" will not start: end now instead of outliving the client timeout.
+            try:
+                reply = getattr(link_of(alias), "start_reply", None)
+            except ToolError:
+                reply = None
+            if isinstance(reply, dict) and reply.get("at", 0) >= started and reply.get("result") == "fail":
+                return state, False
         time.sleep(POLL_S)
     return state, False
 
@@ -837,6 +846,18 @@ def start_not_seen_note(alias, params):
         note = f"the printer received the job but went back to {state} without loading the file: it rejected the file"
     if raw.get("print_error"):
         note += f" (print error {raw['print_error']})"
+    try:
+        reply = getattr(link_of(alias), "start_reply", None)
+    except ToolError:
+        reply = None
+    if isinstance(reply, dict) and time.time() - reply.get("at", 0) < 120 and reply.get("result") not in (None, "success"):
+        note += f' The printer answered the start with result "{reply["result"]}"'
+        if reply.get("reason"):
+            note += f" (reason: {reply['reason']})."
+        elif reply["result"] == "fail":
+            note += " and gave no reason."
+        else:
+            note += "."
     return note
 
 
@@ -1803,6 +1824,10 @@ def tool_prepare_print_start(args):
             f"circa {upload['time_s'] // 60} minuti{weight}. {filament_note(alias, upload)} "
             "Guarda la foto: il piatto deve essere libero."
         )
+        for unit in raw.get("ams_units") or []:
+            if unit.get("drying"):
+                summary += (f" AMS {unit.get('unit')} is drying: some printers refuse to start a print while an AMS is drying;"
+                            " stop the drying first if the start fails.")
         text = issue_token(alias, "start", {"file_id": args["file_id"]}, summary, photo_url=store_photo(jpeg))
         return [image_content(jpeg)] + text
 
@@ -2939,6 +2964,8 @@ def upload_model(alias, name, data, engine=None, choices=None, slot=None, draft=
     printer_id({"printer": alias})
     if not MODEL_NAME.fullmatch(name):
         raise ToolError("Formato non ammesso: serve un file STL, 3MF o STEP")
+    if name.lower().endswith(".gcode.3mf"):  # already sliced: it belongs to Files, never to the slicer
+        raise ToolError("This file is already sliced: it goes to Files, not to Print now.")
     if draft:
         facts = slicer.model_facts(name, data)  # several plates: the app asks which one
         with DB:
