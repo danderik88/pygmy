@@ -337,6 +337,18 @@ def save_store(path, printers):
     os.replace(tmp, path)
 
 
+def unit_letter(u):
+    """'A'..'D' for AMS units 0-3, 'HT' for unit 128, 'HT2'.. above it."""
+    if u < 128:
+        return "ABCD"[u % 4]
+    return "HT" if u == 128 else f"HT{u - 127}"
+
+
+def slot_name(u, slot):
+    """The slot as drawn in the app: 'A1' for an AMS unit, 'HT1' for the AMS HT."""
+    return f"{unit_letter(u)}{slot + 1}"
+
+
 def ams_trays(units):
     """Loaded AMS trays as reported right now (an AMS moves between printers): never the RFID ids."""
     out = []
@@ -351,7 +363,7 @@ def ams_trays(units):
             slot = int(tray.get("id", 0))
             remain = tray.get("remain")
             have_tag = not _no_tag(tray.get("tag_uid"))
-            out.append({"slot": f"{'ABCD'[u % 4]}{slot + 1}", "index": u * 4 + slot, "material": tray["tray_type"],
+            out.append({"slot": slot_name(u, slot), "index": u * 4 + slot, "material": tray["tray_type"],
                         "name": tray.get("tray_sub_brands") or None, "color": tray.get("tray_color") or None,
                         "profile_id": tray.get("tray_info_idx") or None,
                         "remain": remain if isinstance(remain, int) and remain >= 0 and have_tag else None,
@@ -402,7 +414,7 @@ SLOT_FIELDS = ("material", "name", "color", "remain", "profile_id", "nozzle_temp
 
 
 def ams_units(units, tray_now=None, exist_bits=None):
-    """Every AMS unit with its four slots, empty ones too, for drawing it: never the RFID ids."""
+    """Every AMS unit with its slots (four, or one for an AMS HT), empty ones too, for drawing it: never the RFID ids."""
     loaded = {t["index"]: t for t in ams_trays(units)}
     out = []
     for unit in units or []:
@@ -431,17 +443,22 @@ def ams_units(units, tray_now=None, exist_bits=None):
             exist = int(exist_bits, 16) if isinstance(exist_bits, str) else None
         except ValueError:
             exist = None
-        for slot in range(4):
+        is_ht = u >= 128
+        for slot in range(1 if is_ht else 4):
             index = u * 4 + slot
+            # An AMS HT (u >= 128) has one tray, whose exist bit starts at 16.
+            bit = 16 + (u - 128) if is_ht else index
             t = loaded.get(index)
-            if t is None and exist is not None and exist >> index & 1:
+            active = tray_now == index or (is_ht and tray_now == u)
+            name = slot_name(u, slot)
+            if t is None and exist is not None and exist >> bit & 1:
                 # The inlet sensor feels filament but the AMS has no data for it (no tag read, not set by hand).
-                slots.append({"slot": f"{'ABCD'[u % 4]}{slot + 1}", "empty": False, "unknown": True,
-                              "material": "Unknown", "active": tray_now == index})
+                slots.append({"slot": name, "empty": False, "unknown": True,
+                              "material": "Unknown", "active": active})
                 continue
-            slots.append({"slot": f"{'ABCD'[u % 4]}{slot + 1}", "empty": t is None, "active": tray_now == index,
+            slots.append({"slot": name, "empty": t is None, "active": active,
                           **({k: t[k] for k in SLOT_FIELDS} if t else {})})
-        out.append({"unit": "ABCD"[u % 4], "humidity": humidity, "temp": temp, "humidity_raw": humidity_raw,
+        out.append({"unit": unit_letter(u), "humidity": humidity, "temp": temp, "humidity_raw": humidity_raw,
                     "dry_time": dry_time, "info": unit.get("info"), "serial": unit.get("serial"),
                     "model": unit.get("model") or "AMS", "can_dry": bool(unit.get("can_dry")),
                     "drying": bool(unit.get("drying")), "dry_target": unit.get("dry_target"),

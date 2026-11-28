@@ -6,6 +6,11 @@ import threading
 import time
 import uuid
 
+try:  # imported as pygmy.ha_mqtt (tests) or flat next to the other modules (server)
+    from . import onboard
+except ImportError:  # no known parent package
+    import onboard
+
 AVAILABILITY = "pygmy/availability"
 DISCOVERY = "homeassistant"
 PUBLISH_S = 5
@@ -151,14 +156,14 @@ def stage_text(stage):
 
 
 def active_slot(tray):
-    """'255' -> none, '254' -> external, else the AMS slot letter+number (e.g. 5 -> B2)."""
+    """'255' -> none, '254' -> external, else the AMS slot name (e.g. 5 -> B2, 512 -> HT1)."""
     if tray == 255:
         return "none"
     if tray == 254:
         return "external"
     if tray is None:
         return None
-    return "ABCD"[tray // 4] + str(tray % 4 + 1)
+    return onboard.slot_name(tray // 4, tray % 4)
 
 
 def ams_status_text(value):

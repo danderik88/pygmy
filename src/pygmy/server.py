@@ -1285,9 +1285,12 @@ def upload_color(file_id):
 
 
 def slot_index(slot):
-    """'A1'..'D4' -> AMS tray index 0-15, anything else (the external spool) -> 254."""
+    """'A1'..'D4' or 'HT1'..'HT9' -> AMS tray index, anything else (the external spool) -> 254."""
     if isinstance(slot, str) and re.fullmatch(r"[A-D][1-4]", slot):
         return (ord(slot[0]) - 65) * 4 + int(slot[1]) - 1
+    ht = re.fullmatch(r"HT([1-9])", slot) if isinstance(slot, str) else None
+    if ht:
+        return (127 + int(ht.group(1))) * 4
     return 254
 
 
@@ -1308,7 +1311,7 @@ def chosen_feed(file_id, raw):
         if index == 254:
             continue  # external spool or no AMS: one spool, checked by type below
         tray = trays.get(index)
-        name = f"AMS slot {'ABCD'[index // 4]}{index % 4 + 1}"
+        name = f"AMS slot {onboard.slot_name(index // 4, index % 4)}"
         if tray is None:
             raise ValueError(f"{name} is empty now: load it or slice again")
         if (tray.get("material") or "").upper() != (f["type"] or "").upper():
@@ -2593,13 +2596,14 @@ def tool_set_spool(args):
         raise ToolError("color deve essere RRGGBBAA, esadecimale maiuscolo")
     material, low, high = entry["type"], entry["min"], entry["max"]
     # ponytail: without slot this is the external spool, ams_id 255 / tray_id 254 as Bambu Studio sends it (checked on the A1).
-    # With a slot, ams_id is the AMS unit 0-3 (A-D) and tray_id the slot 0-3 (1-4).
+    # With a slot, ams_id is the AMS unit (A-D -> 0-3, HT1 -> 128) and tray_id the slot 0-3 (1-4).
     if slot is None:
         ams_id, tray_id = 255, 254
-    elif isinstance(slot, str) and re.fullmatch(r"[A-D][1-4]", slot):
-        ams_id, tray_id = ord(slot[0]) - ord("A"), int(slot[1]) - 1
     else:
-        raise ToolError("slot deve essere da A1 a D4")
+        index = slot_index(slot)
+        if index == 254:
+            raise ToolError("slot deve essere da A1 a D4 o da HT1 a HT9")
+        ams_id, tray_id = index // 4, index % 4
     payload = {"print": {"command": "ams_filament_setting", "ams_id": ams_id, "tray_id": tray_id, "tray_info_idx": profile,
                          "setting_id": "", "tray_color": color, "tray_type": material,
                          "nozzle_temp_min": low, "nozzle_temp_max": high}}
@@ -2626,9 +2630,10 @@ def tool_read_filament(args):
     """Ask the AMS to read a slot's RFID tag again (it turns the spool), as Bambu Studio's refresh does."""
     printer_id(args)
     slot = args.get("slot")
-    if not (isinstance(slot, str) and re.fullmatch(r"[A-D][1-4]", slot)):
-        raise ToolError("slot deve essere da A1 a D4")
-    unit, tray = ord(slot[0]) - ord("A"), int(slot[1]) - 1
+    index = slot_index(slot) if isinstance(slot, str) else 254
+    if index == 254:
+        raise ToolError("slot deve essere da A1 a D4 o da HT1 a HT9")
+    unit, tray = index // 4, index % 4
     raw = read_status(args["printer"])
     now = raw.get("tray_now")
     try:
@@ -2636,8 +2641,8 @@ def tool_read_filament(args):
     except (TypeError, ValueError):
         now = 255
     # the user: never while this AMS feeds the print (254/255 = external spool / none).
-    if raw.get("state") in PRINTING and now < 254 and now // 4 == unit:
-        raise ToolError(f"AMS {slot[0]} sta alimentando la stampa: rileggi a stampa finita")
+    if raw.get("state") in PRINTING and now < 254 and (now // 4 == unit or (unit >= 128 and now == unit)):
+        raise ToolError(f"AMS {onboard.unit_letter(unit)} sta alimentando la stampa: rileggi a stampa finita")
     payload = {"print": {"command": "ams_get_rfid", "ams_id": unit, "slot_id": tray}}
     return run_direct("read_filament", args, "read_filament", {"slot": slot}, None,
                       publish_send(args.get("printer"), payload), after_sent=pushall)
@@ -2647,7 +2652,7 @@ DRY_MODELS = {"AMS 2 Pro": 65, "AMS HT": 85}  # AMS units with a heater: model -
 
 
 def ams_unit_of(raw, unit):
-    """(report id, unit dict) for a letter A-D or the id the printer reports, or None."""
+    """(report id, unit dict) for an A-D letter, an HT name ('HT', 'HT2') or the id the printer reports, or None."""
     for u in raw.get("ams") or []:
         try:
             uid = int(u.get("id"))
@@ -2658,7 +2663,7 @@ def ams_unit_of(raw, unit):
         if isinstance(unit, str):
             if unit.isdigit() and int(unit) == uid:
                 return uid, u
-            if len(unit) == 1 and unit.upper() == "ABCD"[uid % 4]:
+            if unit.upper() == onboard.unit_letter(uid):
                 return uid, u
     return None
 
@@ -2693,7 +2698,7 @@ def tool_ams_dry(args):
     payload = {"print": {"command": "ams_filament_drying", "sequence_id": "0", "ams_id": uid,
                          "temp": payload_temp, "cooling_temp": cooling, "duration": duration, "humidity": 0,
                          "mode": mode, "rotate_tray": False, "filament": "", "close_power_conflict": False}}
-    letter = "ABCD"[uid % 4]
+    letter = onboard.unit_letter(uid)
     detail = f" unit {letter} {temp}°C {hours}h" if action == "start" else f" unit {letter}"
     print(f"{printer}: drying {action}{detail}", file=sys.stderr, flush=True)
     run_direct("ams_dry", args, "ams_dry", {"unit": args.get("unit"), "action": action, "temp": temp, "hours": hours},
@@ -3412,8 +3417,8 @@ TOOLS = {
     "prepare_unload_filament": (tool_prepare_unload_filament, "Prepara lo scarico della bobina esterna: l'ugello si scalda." + CONFIRM_RULE, schema(), True),
     "confirm_unload_filament": (tool_confirm_unload_filament, "Esegue lo scarico della bobina esterna preparato, dopo il si' dell'utente." + CONFIRM_RULE, schema(**TOKEN, **KEY), True),
     "set_nozzle": (tool_set_nozzle, "Dichiara l'ugello montato (diametro e tipo), scritto nella stampante. Solo a stampante ferma.", schema(diameter={"type": "number", "enum": list(NOZZLE_DIAMETERS)}, type={"type": "string", "enum": list(NOZZLE_TYPES)}, **KEY), True),
-    "set_spool": (tool_set_spool, "Dichiara un filamento (profilo filamento e colore RRGGBBAA), scritto nella stampante: la bobina esterna (solo a stampante ferma) o lo slot AMS indicato (anche durante la stampa).", optional_props(("profile_id", "color"), profile_id={"type": "string", "description": "Id da printer_info, choices.spool_profiles"}, color={"type": "string", "description": "RRGGBBAA esadecimale maiuscolo"}, slot={"type": "string", "pattern": "^[A-D][1-4]$", "description": "Slot AMS da modificare, per esempio A2. Senza: la bobina esterna."}, **KEY), True),
-    "read_filament": (tool_read_filament, "Rilegge il tag RFID di uno slot AMS (la bobina gira). Mai mentre quell'AMS alimenta la stampa.", schema(slot={"type": "string", "pattern": "^[A-D][1-4]$", "description": "Slot AMS, per esempio A1"}, **KEY), True),
+    "set_spool": (tool_set_spool, "Dichiara un filamento (profilo filamento e colore RRGGBBAA), scritto nella stampante: la bobina esterna (solo a stampante ferma) o lo slot AMS indicato (anche durante la stampa).", optional_props(("profile_id", "color"), profile_id={"type": "string", "description": "Id da printer_info, choices.spool_profiles"}, color={"type": "string", "description": "RRGGBBAA esadecimale maiuscolo"}, slot={"type": "string", "pattern": "^(?:[A-D][1-4]|HT[1-9])$", "description": "Slot AMS da modificare, per esempio A2 o HT1. Senza: la bobina esterna."}, **KEY), True),
+    "read_filament": (tool_read_filament, "Rilegge il tag RFID di uno slot AMS (la bobina gira). Mai mentre quell'AMS alimenta la stampa.", schema(slot={"type": "string", "pattern": "^(?:[A-D][1-4]|HT[1-9])$", "description": "Slot AMS, per esempio A1 o HT1"}, **KEY), True),
     "ams_dry": (tool_ams_dry, "Asciuga un AMS 2 Pro o AMS HT (asciugatura con riscaldatore). Mai durante una stampa; l'AMS HT arriva a 85 °C, gli altri a 65 °C.", optional_props(("unit", "action"), unit={"type": "string", "description": "Lettera AMS A-D oppure l'id riportato dalla stampante"}, action={"type": "string", "enum": ["start", "stop"]}, temp={"type": "integer", "description": "Gradi Celsius, 45-65 oppure 45-85 per AMS HT"}, hours={"type": "integer", "description": "Ore di asciugatura, 1-24"}, **KEY), True),
     "set_plate": (tool_set_plate, "Dichiara il piatto montato (nomi OrcaSlicer). La A1 non lo memorizza: lo tiene BFF e lo riporta in printer_info.", schema(plate={"type": "string", "enum": list(PLATE_TYPES)}), True),
     "delete_file": (tool_delete_file, "Elimina un file pronto da stampare.", schema(file_id={"type": "integer"}), True),

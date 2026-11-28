@@ -2665,6 +2665,7 @@ function spoolSvg(c) {
   return `<svg viewBox="0 0 64 90"><rect x="4" y="6" width="50" height="78" rx="10" fill="#9a9da2"/><rect x="10" y="8" width="38" height="74" rx="5" fill="${c}"/>`
     + `<ellipse cx="50" cy="45" rx="10" ry="39" fill="#b4b7bb"/><ellipse cx="50" cy="45" rx="3" ry="7" fill="#3d3f43"/></svg>`;
 }
+const profName = id => ((info && info.choices && info.choices.spool_profiles) || []).find(x => x.id === id)?.name || "";
 function paintAms(s) {
   const units = (s && s.ams_units) || [], ext = (s && s.spool) || {};
   if (slotHold) {
@@ -2682,12 +2683,13 @@ function paintAms(s) {
   $("amstabs").innerHTML = units.map((u, i) => `<button class="${i === amsSel ? "sel" : ""}" data-u="${i}"><i class="amu">${u.slots.map(sl => `<b style="background:${slotCol(sl)}"></b>`).join("")}</i></button>`).join("")
     + (ext.material ? `<button class="ext" data-t="ext">EXT</button>` : "");
   const u = units[amsSel];
-  $("amsname").textContent = `AMS-${u.unit}`;
+  const uname = u.unit.length === 1 ? `AMS-${u.unit}` : "AMS HT";
+  $("amsname").textContent = uname + (u.model && u.model !== "AMS" && u.model !== uname ? ` · ${u.model}` : "");
   // The printer reports 5 = driest; the app shows it as A (dry) to E (wet).
   $("amshum").textContent = u.humidity ? `💧 ${"EDCBA"[u.humidity - 1] || "?"}` : "";
   $("amsspools").innerHTML = u.slots.map(sl => `<div class="${sl.active ? "on" : ""}${sl.slot === editSlot ? " edit" : ""}" data-slot="${sl.slot}" role="button" title="Edit ${sl.slot}"><div class="mat">${sl.empty ? "Empty" : esc(sl.material)}</div>
     <div class="sp">${spoolSvg(slotCol(sl))}<span class="lab">${sl.slot}</span></div>
-    <div class="rem">${sl.empty ? "" : (esc(sl.name || "") + (sl.remain != null ? ` · <span${sl.remain <= 10 ? ' class="low"' : ""}>${sl.remain} %</span>` : ""))}${sl.active ? " · in use" : ""}</div></div>`).join("");
+    <div class="rem">${sl.empty ? "" : (esc(sl.name || profName(sl.profile_id)) + (sl.remain != null ? ` · <span${sl.remain <= 10 ? ' class="low"' : ""}>${sl.remain} %</span>` : ""))}${sl.active ? " · in use" : ""}</div></div>`).join("");
   // AMS 2 Pro and AMS HT have a heater: dry them here, or watch the time left.
   $("amsdry").innerHTML = !u.can_dry ? "" : u.drying
     ? `<span class="note" style="margin:0">Drying · ${dryLeft(u.dry_time)}</span><button class="btn" id="drystop">Stop</button>`

@@ -238,6 +238,11 @@ the head hits the filament cutter.
 
 - Proxmox: systemd units in `deploy/`, `deploy/slicer/provision.sh` creates the slicer LXC.
 - No root: `deploy/user/install.sh user@host` (systemd `--user`, OrcaSlicer flatpak, needs Tailscale and `uv`).
+- Cameras without Docker: Pygmy does not install go2rtc for you. Run [go2rtc](https://github.com/AlexxIT/go2rtc) with
+  `deploy/go2rtc.yaml` (`deploy/go2rtc.service` is a systemd unit for it) and put a static `ffmpeg` on the go2rtc
+  service `PATH`: without ffmpeg the H.264 printers show video but no snapshots. Pygmy finds go2rtc at
+  `http://127.0.0.1:1984`; set `PYGMY_GO2RTC_API` if it listens elsewhere, and set `PYGMY_STREAM_TOKEN` (16+ characters)
+  or no stream is registered.
 
 </details>
 
